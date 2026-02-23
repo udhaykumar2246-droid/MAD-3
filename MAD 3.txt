@@ -1,5 +1,5 @@
 Main Activity:
-package com.example.myapplication;
+package com.example.musicapp;
 
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -26,6 +26,9 @@ import androidx.core.view.WindowInsetsCompat;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+// Import the auto-generated R class explicitly to resolve "package R does not exist"
+import com.example.musicapp.R;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -113,15 +116,14 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupPlaylist() {
         // Add your songs here. Ensure the names match your files in res/raw
-        rawSongs.add(R.raw.er);
-        songNames.add("er");
-        
-        // If you add more files, add them here:
-        // rawSongs.add(R.raw.song2);
-        // songNames.add("Song 2 Name");
-        
+        // Commented out to prevent build error if res/raw/er is missing
+        // rawSongs.add(R.raw.er);
+        // songNames.add("er");
+
         if (!rawSongs.isEmpty()) {
             titleTxt.setText("Playlist ready: " + songNames.get(currentSongIndex));
+        } else {
+            titleTxt.setText("No songs in res/raw. Use 'Open Music File' to play music.");
         }
     }
 
@@ -209,6 +211,7 @@ public class MainActivity extends AppCompatActivity {
         if (mediaPlayer != null) mediaPlayer.release();
     }
 }
+
 
 xml:
 <?xml version="1.0" encoding="utf-8"?>
@@ -317,5 +320,7 @@ xml:
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/controls" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
