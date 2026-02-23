@@ -1,0 +1,321 @@
+Main Activity:
+package com.example.myapplication;
+
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ProgressBar;
+import android.widget.SeekBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity {
+
+    private static final String TAG = "MainActivity";
+    private MediaPlayer mediaPlayer;
+    private SeekBar seekBar;
+    private TextView currentTimeTxt, totalTimeTxt, titleTxt;
+    private ProgressBar loadingProgress;
+    private boolean isPrepared = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final List<Integer> rawSongs = new ArrayList<>();
+    private final List<String> songNames = new ArrayList<>();
+    private int currentSongIndex = 0;
+
+    private final ActivityResultLauncher<String> pickAudioLauncher = registerForActivityResult(
+            new ActivityResultContracts.GetContent(),
+            uri -> {
+                if (uri != null) {
+                    playSelectedSong(uri);
+                }
+            }
+    );
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
+        setContentView(R.layout.activity_main);
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
+
+        // Initialize UI
+        Button playButton = findViewById(R.id.playButton);
+        Button pauseButton = findViewById(R.id.pauseButton);
+        Button prevButton = findViewById(R.id.prevButton);
+        Button nextButton = findViewById(R.id.nextButton);
+        Button pickSongButton = findViewById(R.id.pickSongButton);
+        seekBar = findViewById(R.id.seekBar);
+        currentTimeTxt = findViewById(R.id.currentTime);
+        totalTimeTxt = findViewById(R.id.totalTime);
+        titleTxt = findViewById(R.id.title);
+        loadingProgress = findViewById(R.id.loadingProgress);
+
+        // Setup playlist from res/raw
+        setupPlaylist();
+
+        // Control Listeners
+        playButton.setOnClickListener(v -> {
+            if (mediaPlayer == null && !rawSongs.isEmpty()) {
+                playRawResource(currentSongIndex);
+            } else if (isPrepared && !mediaPlayer.isPlaying()) {
+                mediaPlayer.start();
+                handler.post(updateSeekBar);
+            }
+        });
+
+        pauseButton.setOnClickListener(v -> {
+            if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                mediaPlayer.pause();
+                handler.removeCallbacks(updateSeekBar);
+            }
+        });
+
+        nextButton.setOnClickListener(v -> playNext());
+        prevButton.setOnClickListener(v -> playPrevious());
+
+        pickSongButton.setOnClickListener(v -> pickAudioLauncher.launch("audio/*"));
+
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser && mediaPlayer != null && isPrepared) {
+                    mediaPlayer.seekTo(progress);
+                    currentTimeTxt.setText(formatTime(progress));
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { handler.removeCallbacks(updateSeekBar); }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { if(mediaPlayer != null && mediaPlayer.isPlaying()) handler.post(updateSeekBar); }
+        });
+    }
+
+    private void setupPlaylist() {
+        // Add your songs here. Ensure the names match your files in res/raw
+        rawSongs.add(R.raw.er);
+        songNames.add("er");
+        
+        // If you add more files, add them here:
+        // rawSongs.add(R.raw.song2);
+        // songNames.add("Song 2 Name");
+        
+        if (!rawSongs.isEmpty()) {
+            titleTxt.setText("Playlist ready: " + songNames.get(currentSongIndex));
+        }
+    }
+
+    private void playRawResource(int index) {
+        if (index < 0 || index >= rawSongs.size()) return;
+        currentSongIndex = index;
+
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+        }
+        isPrepared = false;
+        loadingProgress.setVisibility(View.VISIBLE);
+        titleTxt.setText("Loading: " + songNames.get(index));
+
+        mediaPlayer = MediaPlayer.create(this, rawSongs.get(index));
+        if (mediaPlayer != null) {
+            isPrepared = true;
+            loadingProgress.setVisibility(View.GONE);
+            titleTxt.setText("Playing: " + songNames.get(index));
+            seekBar.setMax(mediaPlayer.getDuration());
+            totalTimeTxt.setText(formatTime(mediaPlayer.getDuration()));
+            mediaPlayer.start();
+            handler.post(updateSeekBar);
+
+            mediaPlayer.setOnCompletionListener(mp -> playNext());
+        }
+    }
+
+    private void playNext() {
+        if (rawSongs.isEmpty()) return;
+        currentSongIndex = (currentSongIndex + 1) % rawSongs.size();
+        playRawResource(currentSongIndex);
+    }
+
+    private void playPrevious() {
+        if (rawSongs.isEmpty()) return;
+        currentSongIndex = (currentSongIndex - 1 + rawSongs.size()) % rawSongs.size();
+        playRawResource(currentSongIndex);
+    }
+
+    private void playSelectedSong(Uri uri) {
+        if (mediaPlayer != null) mediaPlayer.release();
+        isPrepared = false;
+        loadingProgress.setVisibility(View.VISIBLE);
+        titleTxt.setText("Loading File...");
+
+        mediaPlayer = new MediaPlayer();
+        try {
+            mediaPlayer.setDataSource(this, uri);
+            mediaPlayer.prepareAsync();
+            mediaPlayer.setOnPreparedListener(mp -> {
+                isPrepared = true;
+                loadingProgress.setVisibility(View.GONE);
+                titleTxt.setText("Playing Custom File");
+                seekBar.setMax(mediaPlayer.getDuration());
+                totalTimeTxt.setText(formatTime(mediaPlayer.getDuration()));
+                mediaPlayer.start();
+                handler.post(updateSeekBar);
+            });
+        } catch (IOException e) { Log.e(TAG, "Error", e); }
+    }
+
+    private final Runnable updateSeekBar = new Runnable() {
+        @Override
+        public void run() {
+            if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                int currentPosition = mediaPlayer.getCurrentPosition();
+                seekBar.setProgress(currentPosition);
+                currentTimeTxt.setText(formatTime(currentPosition));
+                handler.postDelayed(this, 1000);
+            }
+        }
+    };
+
+    private String formatTime(int milliseconds) {
+        int minutes = (milliseconds / 1000) / 60;
+        int seconds = (milliseconds / 1000) % 60;
+        return String.format("%02d:%02d", minutes, seconds);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacks(updateSeekBar);
+        if (mediaPlayer != null) mediaPlayer.release();
+    }
+}
+
+xml:
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="64dp"
+        android:text="No Song Selected"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <ProgressBar
+        android:id="@+id/loadingProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/seekBar"
+        app:layout_constraintEnd_toEndOf="@+id/seekBar"
+        app:layout_constraintStart_toStartOf="@+id/seekBar"
+        app:layout_constraintTop_toTopOf="@+id/seekBar" />
+
+    <SeekBar
+        android:id="@+id/seekBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="32dp"
+        android:layout_marginTop="48dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/title" />
+
+    <TextView
+        android:id="@+id/currentTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:text="00:00"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/seekBar" />
+
+    <TextView
+        android:id="@+id/totalTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="32dp"
+        android:text="00:00"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/seekBar" />
+
+    <LinearLayout
+        android:id="@+id/controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        app:layout_constraintTop_toBottomOf="@+id/currentTime">
+
+        <Button
+            android:id="@+id/prevButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            android:text="Prev" />
+
+        <Button
+            android:id="@+id/playButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            android:text="Play" />
+
+        <Button
+            android:id="@+id/pauseButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            android:text="Pause" />
+
+        <Button
+            android:id="@+id/nextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            android:text="Next" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/pickSongButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:text="Open Music File"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/controls" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
